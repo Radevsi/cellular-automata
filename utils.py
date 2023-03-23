@@ -1,5 +1,6 @@
 ## Utility functions for PyTorch CA implementation
 
+import os
 import io
 import numpy as np
 import torch
@@ -114,7 +115,7 @@ def save_ca_model(model, model_name):
     torch.save(model.state_dict(), "./models/{}.pth".format(model_name))
     print("Saved model {} to disk".format(model_name))
     
-def load_ca_model(model, model_name, *args, **kwargs):
+def load_ca_model(model, model_name, device=None, *args, **kwargs):
     """Load model_name from models folder in working directory
     
     :param model: PyTorch model class name (not instantiatied object)
@@ -122,7 +123,10 @@ def load_ca_model(model, model_name, *args, **kwargs):
     :return: PyTorch model object loaded from disk
     """
     ca = model(*args, **kwargs)
-    ca.load_state_dict(torch.load("./models/{}.pth".format(model_name)))
+    if device:
+        ca.load_state_dict(torch.load("./models/{}.pth".format(model_name), map_location=device))
+    else:
+        ca.load_state_dict(torch.load("./models/{}.pth".format(model_name)))
     ca.eval()
     return ca
 
