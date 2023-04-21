@@ -9,7 +9,9 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.keras.backend as K
 from scipy.ndimage import gaussian_filter1d
-from spektral.layers.ops import sp_matrix_to_sp_tensor
+# from spektral.layers.ops import sp_matrix_to_sp_tensor
+from spektral.utils.sparse import sp_matrix_to_sp_tensor # this has been moved
+
 from spektral.transforms import NormalizeSphere
 from tensorflow.keras.losses import MeanSquaredError
 from tensorflow.keras.optimizers import Adam
