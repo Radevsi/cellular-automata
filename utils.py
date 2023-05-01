@@ -100,8 +100,16 @@ def simulate_model(model, init, n_steps, device=torch.device('cuda')):
         x, model = init.to(device), model.to(device)
         for _ in tqdm.trange(n_steps):
             x = model(x)
-        # plt.imshow(first[0, ...].detach().cpu())
-        visualize_batch(init.detach().cpu(), x.detach().cpu(), n_steps)
+        
+        # If batch size is 1, use matplotlib's imshow
+        if init.shape[0] == 1:
+            
+            fig, (ax1, ax2) = plt.subplots(1, 2)
+            ax1.imshow(init.detach().cpu()[0, ..., :4])
+            ax2.imshow(x.detach().cpu()[0, ..., :4])
+            fig.show()            
+        else:
+            visualize_batch(init.detach().cpu(), x.detach().cpu(), n_steps)
         # return x.detach()
 
 def save_ca_model(model, model_name):
@@ -162,3 +170,31 @@ def show_weights(ca):
     fig.show()
     print(weights1.shape, bias1.shape, weights2.shape, bias2.shape)
     # return weights1.shape, bias1.shape, weights2.shape, bias2.shape
+    
+    
+#     from collections import namedtuple
+#     def make_asymmetric_seed(r, target_img=torch.tensor(target_img), p=TARGET_PADDING):
+#         """Make 3 non-collinear points, distributed uniformly on a 
+#             circular edge of predefined radius"""
+#         pad_target = torch.nn.functional.pad(target_img, (0, 0, p, p, p, p))
+#         h, w = pad_target.shape[:2]
+#         Point = namedtuple('Point', ['x', 'y'])
+#         center = Point(h//2, w//2)
+#         print(center)
+#         C = Point(center.x - r, center.y)
+#         A = Point(center.x - r*math.cos(math.pi/6), center.y + r*math.sin(math.pi/6))
+#         B = Point(center.x + r*math.cos(math.pi/6), A.y)
+#         print(C, A, B)
+
+#         angles = [0, 2/3*math.pi, 4/3*math.pi]
+#         cx, cy = center.x, center.y
+#         # Calculate the coordinates of each point
+#         points = [(cx + r*math.cos(angle), cy + r*math.sin(angle)) for angle in angles]
+
+#         return center, points
+
+#         # C = (center[0]
+#         # seed = torch.zeros(h, w, CHANNEL_N, dtype=torch.float32)
+
+#     center, (a,b,c) = make_asymmetric_seed(6)
+#     a, b, c
