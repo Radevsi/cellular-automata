@@ -60,7 +60,10 @@ def imshow(a, fmt='jpeg'):
 
 def to_rgba(x):
   "This function used outside model, using original shaping conventions"
-  return x[..., :4]
+  if len(x.shape) == 3:
+    return x[..., :4]
+  elif len(x.shape) == 4:
+    return x[0, ..., :4]
 
 def get_living_mask(x):
   "This function used within model with PyTorch shaping conventions"
@@ -72,7 +75,10 @@ def to_alpha(x):
   return torch.clamp(x[..., 3:4], 0.0, 1.0)
 
 def to_rgb(x):
-  # assume rgb premultiplied by alpha
+  # Assume rgb premultiplied by alpha
+  if len(x.shape) == 4:
+    # Remove batch dimension if present
+    x = x[0, ...]
   rgb, a = x[..., :3], to_alpha(x)
   return 1.0-a+rgb
 
@@ -92,25 +98,39 @@ def plot_loss(loss_log):
 
 ## Additional utilities
 
-def simulate_model(model, init, n_steps, device=torch.device('cuda')):
+def clip_tensor(tensor):
+    """Make `tensor` appropropriate for use with matplotlib.
+        This involves detaching, moving to numpy, clipping to
+        positive values and re-normalizing to [0...255.0].
+    """
+    return np.uint8(np.clip(tensor.detach().cpu().numpy(), 0, 1) * 255.0)
+
+def simulate_model(model, init, n_steps, print_sim=True, device=torch.device('cuda')):
     """Runs the simulation for ca model `models` for n_steps, starting
         from initial condition `init`.
+    
+    :param model: PyTorch model object
+    :param init: PyTorch Tensor, starting state for model of shape either
+        (B, H, W, C) or (H, W, C).
+    :param print_sim: bool, whether or not to print resulting simulation
+    :param device: device on which to run simulation
+    :return: PyTorch tensor, result of simulating the model for `n_steps` steps.
     """
     with torch.no_grad():
         x, model = init.to(device), model.to(device)
         for _ in tqdm.trange(n_steps):
             x = model(x)
-        
-        # If batch size is 1, use matplotlib's imshow
-        if init.shape[0] == 1:
-            
-            fig, (ax1, ax2) = plt.subplots(1, 2)
-            ax1.imshow(init.detach().cpu()[0, ..., :4])
-            ax2.imshow(x.detach().cpu()[0, ..., :4])
-            fig.show()            
-        else:
-            visualize_batch(init.detach().cpu(), x.detach().cpu(), n_steps)
-        # return x.detach()
+        x0, x = clip_tensor(init), clip_tensor(x)
+        if print_sim:
+            if init.shape[0] == 1:
+                # If batch size is 1, use matplotlib's imshow
+                fig, (ax1, ax2) = plt.subplots(1, 2)
+                ax1.imshow(x0[0, ..., :4])
+                ax2.imshow(x[0, ..., :4])
+                fig.show()            
+            else:
+                visualize_batch(init.detach().cpu(), x.detach().cpu(), n_steps)
+        return x
 
 def save_ca_model(model, model_name):
     """Save model state dict as model_name in models folder
@@ -170,6 +190,38 @@ def show_weights(ca):
     fig.show()
     print(weights1.shape, bias1.shape, weights2.shape, bias2.shape)
     # return weights1.shape, bias1.shape, weights2.shape, bias2.shape
+    
+    
+# def compare_model_weights(model1, model2):
+#     pdist = torch.nn.PairwiseDistance()
+#     cos = torch.nn.CosineSimilarity(dim=0)
+
+#     weights = []
+#     biases = []
+
+#     pdists = {}
+#     cos_dists = {}
+#     with torch.no_grad():
+#         index = 0
+#         for m1, m2 in zip(model1.modules(), model2.modules()):
+#             if isinstance(m1, nn.Conv2d) and isinstance(m2, nn.Conv2d):
+#                 index += 1
+#                 # print('inside')
+#                 weight1 = m1.state_dict()['weight'].squeeze()
+#                 bias1 = m1.state_dict()['bias']
+#                 weight2 = m2.state_dict()['weight'].squeeze()
+#                 bias2 = m2.state_dict()['bias']
+
+#                 print(f'weight1 shape is {weight1.shape} and weight2 shape is {weight2.shape}')
+                
+#                 pdists[f'weight{index}'] = pdist(weight1, weight2)
+#                 cos_dists[f'weight{index}'] = cos(weight1, weight2)
+#                 cos_dists[f'bias{index}'] = cos(bias1, bias2)
+              
+#                 # weights.append(weight)
+#                 # biases.append(bias)
+
+#     return pdists, cos_dists
     
     
 #     from collections import namedtuple
