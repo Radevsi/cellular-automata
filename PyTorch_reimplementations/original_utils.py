@@ -77,9 +77,6 @@ def to_alpha(x):
 
 def to_rgb(x):
   # Assume rgb premultiplied by alpha
-  if len(x.shape) == 4:
-    # Remove batch dimension if present
-    x = x[0, ...]
   rgb, a = x[..., :3], to_alpha(x)
   return 1.0-a+rgb
 
