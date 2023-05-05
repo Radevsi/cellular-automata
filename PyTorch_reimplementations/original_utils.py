@@ -127,7 +127,7 @@ def simulate_model(model, init, n_steps, print_sim=True, device=torch.device('cu
                 ax2.imshow(x[0, ..., :4])
                 fig.show()            
             else:
-                visualize_batch(init.detach().cpu(), x.detach().cpu(), n_steps)
+                visualize_batch(torch.tensor(x0), torch.tensor(x), n_steps)
         return x
 
 def save_ca_model(model, model_name):
