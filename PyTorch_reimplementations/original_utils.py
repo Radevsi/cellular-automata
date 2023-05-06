@@ -73,7 +73,7 @@ def get_living_mask(x):
 
 def to_alpha(x):
   "Assume original TF shaping convention"
-  return torch.clamp(x[..., 3:4], 0.0, 1.0)
+  return np.clip(x[..., 3:4], 0.0, 1.0)
 
 def to_rgb(x):
   # Assume rgb premultiplied by alpha
@@ -83,6 +83,8 @@ def to_rgb(x):
 def visualize_batch(x0, x, step_i):
   vis0 = np.hstack(to_rgb(x0).numpy())
   vis1 = np.hstack(to_rgb(x).numpy())
+  # vis0 = np.hstack(x0.numpy())
+  # vis1 = np.hstack(x.numpy())    
   vis = np.vstack([vis0, vis1])
   # imwrite('train_log/batches_%04d.jpg'%step_i, vis)
   print('batch (before/after):')
@@ -118,16 +120,16 @@ def simulate_model(model, init, n_steps, print_sim=True, device=torch.device('cu
         x, model = init.to(device), model.to(device)
         for _ in tqdm.trange(n_steps):
             x = model(x)
-        x0, x = clip_tensor(init), clip_tensor(x)
         if print_sim:
             if init.shape[0] == 1:
                 # If batch size is 1, use matplotlib's imshow
+                x0, x = clip_tensor(init), clip_tensor(x)
                 fig, (ax1, ax2) = plt.subplots(1, 2)
                 ax1.imshow(x0[0, ..., :4])
                 ax2.imshow(x[0, ..., :4])
                 fig.show()            
             else:
-                visualize_batch(torch.tensor(x0), torch.tensor(x), n_steps)
+                visualize_batch(init.detach().cpu(), x.detach().cpu(), n_steps)
         return x
 
 def save_ca_model(model, model_name):
