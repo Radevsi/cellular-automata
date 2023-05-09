@@ -9,6 +9,7 @@ import torch.nn.functional as F
 import requests
 import PIL
 import tqdm
+import math
 
 import matplotlib.pyplot as plt
 from IPython.display import Image
@@ -88,14 +89,15 @@ def to_rgb(x):
   rgb, a = x[..., :3], to_alpha(x)
   return 1.0-a+rgb
 
-def visualize_batch(x0, x, step_i):
+def visualize_batch(x0, x, step_i=0, verbose=True):
   vis0 = np.hstack(to_rgb(x0).numpy())
   vis1 = np.hstack(to_rgb(x).numpy())
   # vis0 = np.hstack(x0.numpy())
   # vis1 = np.hstack(x.numpy())    
   vis = np.vstack([vis0, vis1])
   # imwrite('train_log/batches_%04d.jpg'%step_i, vis)
-  print('batch (before/after):')
+  if verbose:
+      print('batch (before/after):')
   imshow(vis)
 
 def plot_loss(loss_log):
@@ -103,7 +105,6 @@ def plot_loss(loss_log):
   plt.title('Loss history (log10)')
   plt.plot(np.log10(loss_log), '.', alpha=0.1)
   plt.show()
-    
     
 # Defines class for making video demos of CA growth.
 # Adapted from original implementation (not my own)
@@ -133,6 +134,30 @@ class VideoWriter:
   def __exit__(self, *kw):
     self.close()    
     
+# Defines class for pooling figures (taken from original Distill paper)
+class SamplePool:
+  def __init__(self, *, _parent=None, _parent_idx=None, **slots):
+    self._parent = _parent
+    self._parent_idx = _parent_idx
+    self._slot_names = slots.keys()
+    self._size = None
+    for k, v in slots.items():
+      if self._size is None:
+        self._size = len(v)
+      assert self._size == len(v)
+      # setattr(self, k, np.asarray(v))
+      setattr(self, k, v)        
+
+  def sample(self, n):
+    idx = np.random.choice(self._size, n, False)
+    batch = {k: getattr(self, k)[idx] for k in self._slot_names}
+    batch = SamplePool(**batch, _parent=self, _parent_idx=idx)
+    return batch
+
+  def commit(self):
+    for k in self._slot_names:
+      getattr(self._parent, k)[self._parent_idx] = getattr(self, k)
+    
 ## Additional utilities - these are largely my own
 
 def clip_tensor(tensor):
@@ -142,7 +167,7 @@ def clip_tensor(tensor):
     """
     return np.uint8(np.clip(tensor.detach().cpu().numpy(), 0, 1) * 255.0)
 
-def simulate_model(model, init, n_steps, print_sim=True, device=torch.device('cuda')):
+def simulate_model(model, init, n_steps, print_sim=True, device='cpu'):
     """Runs the simulation for ca model `models` for n_steps, starting
         from initial condition `init`.
     
@@ -171,13 +196,6 @@ def simulate_model(model, init, n_steps, print_sim=True, device=torch.device('cu
 
 ## Utilities for storing and loading objects
 
-def create_filename(N,
-     hidden_repr,
-     hidden_repr_size,
-     channel_n,
-     hidden_size):
-    return f'C{N}_{hidden_repr}-{hidden_repr_size}_channeln-{channel_n}_hiddensz-{hidden_size}'
-
 def save_ca_model(model, model_name):
     """Save model state dict as model_name in models folder
     
@@ -199,10 +217,11 @@ def load_ca_model(model, model_name, device=None, *args, **kwargs):
     ca = model(*args, **kwargs)
     if device:
         ca.load_state_dict(torch.load("./models/{}.pth".format(model_name), map_location=device))
+        return ca.to(device)
     else:
         ca.load_state_dict(torch.load("./models/{}.pth".format(model_name)))
-    # ca.eval()
-    return ca
+        # ca.eval()
+        return ca
 
 def save_np_array(loss_log, filename, foldername="loss_log"):
     """Save loss_log array as filename in foldername folder
@@ -214,7 +233,7 @@ def save_np_array(loss_log, filename, foldername="loss_log"):
         os.mkdir(foldername)
     with open(f"./{foldername}/{filename}.npy", 'wb') as file:
         np.save(file, loss_log)
-    print(f"Saved array under {filename} name to disk")
+    print(f"Saved array under {foldername}/{filename} name to disk")
     
 def load_np_array(filename, foldername="loss_log"):
     """Load `filename` from `foldername` folder in working directory
@@ -226,7 +245,155 @@ def load_np_array(filename, foldername="loss_log"):
     with open(f"./{foldername}/{filename}.npy", 'rb') as file:
         return np.load(file, allow_pickle=True)
 
+def get_stored_model(N, hidden_repr, hidden_repr_size, device='cpu'):
+    """Calls the custom-made `create_filename` and `load_ca_model` 
+        functions to return a loaded model object. Note: assumes that 
+        the only differences in the models comes from the number of group 
+        elements N in the cyclic group C_N, the hidden representation used, 
+        and the number of internal feature fields.
+        
+        WARNING: Does not check if the requested parameters lead to a trained
+        model. We leave that to the discretion of the user. 
+        
+    :param N: int, defines the 'N' in the cyclic group C_N
+    :param hidden_repr: str, which hidden representation to use
+    :param hidden_repr_size: int, defines how many internal feature fields to use
+    :return: filename of stored model and trained PyTorch model object
+    """
+    filename = create_filename(N,
+                                 hidden_repr=hidden_repr,
+                                 hidden_repr_size=hidden_repr_size, # Note: this must be a multiple of channel_n
+                                 channel_n=CHANNEL_N,
+                                 hidden_size=HIDDEN_SIZE)
+
+    loaded_model = load_ca_model(CAModel, filename, device=device,
+                                 N=N,
+                                 hidden_repr=hidden_repr,
+                                 hidden_repr_size=hidden_repr_size,
+                                 channel_n=CHANNEL_N,
+                                 hidden_size=HIDDEN_SIZE)
+    
+    return filename, loaded_model.to(device)
+    
+    
 #############################################################
+# Helper functions to make a seed (either symmetric or asymmetric)
+#############################################################
+
+def get_circle_points(a, b, radius, num_points=3):
+    """Returns three non-collinear points on a circle, centered
+        at (a, b) with radius `radius`.
+    
+    :param a: int, x coordinate of circle center
+    :param b: int, y coordinate of circle center
+    :param radius: int, radius of circle 
+    :param num_points: int, number of points for asymmetric seed
+    """
+    points = []
+    for i in range(num_points):
+        angle = 2 * math.pi * i / num_points
+        x = a + radius * math.cos(angle)
+        y = b + radius * math.sin(angle)
+        points.append((int(round(x)), int(round(y))))
+    return points
+
+def make_seed(target_img, radius=None, channel_n=16, rot=0, p=16, device='cpu', print_seed=True):
+    """Makes an asymmetric seed with three non-collinear points.
+        If radius is None, seeds a single pixel.
+        `rot` is an int in [1,2,3,4], representing 90 degree
+        rotations to the left."""
+    target_img = torch.tensor(target_img)
+    pad_target = torch.nn.functional.pad(target_img, (0, 0, p, p, p, p))
+    h, w = pad_target.shape[:2] # get height and width of padded target image
+    x, y = h//2, w//2 # get coordinates of center pixel
+    seed = torch.zeros(h, w, channel_n, dtype=torch.float32)
+    if radius is None:
+        seed[x, y, 3:] = 1.0    
+    else:
+        # Rotate the points
+        points = get_circle_points(x, y, radius)
+        points = [points[(i+rot) % len(points)] for i in range(len(points))]
+
+        # Seed the points
+        for color_channel_i, point in enumerate(points):
+            seed[point[0], point[1], 3:] = 1.0  # set auxiliary channels
+            seed[point[0], point[1], color_channel_i] = 1.0  # set color channel
+        
+    if print_seed:
+        fig, (ax1, ax2) = plt.subplots(1, 2)
+        permuted_seed = seed.permute(-1, 0, 1)
+        ax1.imshow(seed[..., :4])
+        ax2.imshow(pad_target)
+        
+        ax1.set_title("Seed")
+        ax2.set_title("Target")
+        fig.show()
+        
+    return seed.to(device), pad_target.to(device)
+
+#########################################################  
+
+
+def make_video(models, seed, n_steps, video_name="test_video", device=None):
+    """Makes a video using the VideoWriter class written by the original
+        implementation's authors. Does not allow for intermediate
+        transformations of the input (i.e. rotations).
+        
+    :param models: list, trained PyTorch models to be simulated
+    :param seed: PyTorch tensor, initial seed to be shared by all models
+    :param n_steps: int, number of model iterations to simulate
+    """
+    if '.mp4' not in video_name:
+        video_name += '.mp4'
+    x = torch.repeat_interleave(seed[None, :, :, :], len(models), dim=0).detach().cpu()
+    with VideoWriter(video_name) as vid:
+      for i in tqdm.trange(n_steps):
+        vis = np.hstack(to_rgb(x))
+        vid.add(zoom(vis, 2))
+        for ca, xk in zip(models, x):
+          ca_in = xk[None, ...].to(device) if device else xk[None, ...]
+          xk[:] = ca(ca_in).detach().cpu()[0]
+
+    # Make a VideoFileClip object and then write it 
+    clip = mvp.VideoFileClip(video_name)
+    clip.write_videofile(f'{video_name}')
+    
+def make_video_with_rotations(models, seed, n_steps, time_steps, angles, video_name="original_rot.mp4", device=None):
+    """Similar to `make_video` function, except allows the user too pass in a list of time_steps 
+        and a list of angles to apply rotations to the model. Should be used only for the original implementation.
+        
+        Note: len(angles) must equal len(time_steps)
+        
+    :param models: list, trained PyTorch models to be simulated
+    :param seed: PyTorch tensor, initial seed to be shared by all models
+    :param n_steps: int, number of model iterations to simulate
+    :param time_steps: list, time steps at which to apply an angle from `angles` list
+    :param angles: list, angles of rotation to apply to the model.
+    """
+    assert len(time_steps) == len(angles)
+    if '.mp4' not in video_name:
+        video_name += '.mp4'
+    x = torch.repeat_interleave(seed[None, :, :, :], len(models), dim=0).detach().cpu()
+    angle = 0.0
+    angle_formula = lambda a : a/360.0 * 2 * np.pi
+    with VideoWriter(video_name) as vid:
+      for i in tqdm.trange(n_steps):
+        vis = np.hstack(to_rgb(x))
+        vid.add(zoom(vis, 2))
+        for ca, xk in zip(models, x):
+          ca_in = xk[None, ...].to(device)
+          for idx, time_step in enumerate(time_steps):
+            if time_step == 0:
+              angle = angle_formula(angles[idx])
+            elif i % time_step == 0 and i != 0:
+              angle = angle_formula(angles[idx])
+          xk[:] = ca(ca_in, angle=angle).detach().cpu()[0]
+
+    # Make a VideoFileClip object and then write it 
+    clip = mvp.VideoFileClip(video_name)
+    clip.write_videofile(f'{video_name}')
+    
+
     
 def show_weights(ca):
     """Show weights for original model implementation.
