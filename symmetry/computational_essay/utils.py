@@ -1,4 +1,4 @@
-## Utility functions for PyTorch CA implementation
+## Utility functions for an Equivariant CA implementation in PyTorch
 
 import os
 import io
@@ -106,10 +106,36 @@ def plot_loss(loss_log):
   plt.plot(np.log10(loss_log), '.', alpha=0.1)
   plt.show()
     
+def plot_losses(losses, labels=None):
+    """Plot all the passed-in losses in a single figure
+    
+    :param losses: list, all the list of losses to be plotted
+    :param labels: list, labels which to assign to respective losses
+    """
+    if labels is not None:
+        assert len(losses) == len(labels)
+        
+    plt.figure(figsize=(10, 4))
+    for i in range(len(losses)):
+        if labels:
+            plt.plot(np.log10(losses[i]), '.', alpha=0.1, label=labels[i])
+        else:
+            plt.plot(np.log10(losses[i]), '.', alpha=0.1)
+    plt.ylim(top=-1)
+    if labels:
+        leg = plt.legend()
+        for lh in leg.legendHandles: 
+            lh.set_alpha(1) 
+    plt.title(f"Comparison of log10 losses for {len(losses)} different models")
+    plt.xlabel('Training steps')
+    plt.ylabel('Log(10) loss')
+    plt.show()
+        
+    
 # Defines class for making video demos of CA growth.
 # Adapted from original implementation (not my own)
 class VideoWriter:
-  def __init__(self, filename, fps=30.0, **kw):
+  def __init__(self, filename, fps=50.0, **kw):
     self.writer = None
     self.params = dict(filename=filename, fps=fps, **kw)
 
@@ -391,9 +417,8 @@ def make_video_with_rotations(models, seed, n_steps, time_steps, angles, video_n
 
     # Make a VideoFileClip object and then write it 
     clip = mvp.VideoFileClip(video_name)
-    clip.write_videofile(f'{video_name}')
+    clip.write_videofile(f'{video_name}')       
     
-
     
 def show_weights(ca):
     """Show weights for original model implementation.
