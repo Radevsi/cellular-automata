@@ -106,11 +106,12 @@ def plot_loss(loss_log):
   plt.plot(np.log10(loss_log), '.', alpha=0.1)
   plt.show()
     
-def plot_losses(losses, labels=None):
+def plot_losses(losses, labels=None, name=None):
     """Plot all the passed-in losses in a single figure
     
     :param losses: list, all the list of losses to be plotted
     :param labels: list, labels which to assign to respective losses
+    :param name: str, if None, figure will not be saved, otherwise save to filename `name`
     """
     if labels is not None:
         assert len(losses) == len(labels)
@@ -129,6 +130,9 @@ def plot_losses(losses, labels=None):
     plt.title(f"Comparison of log10 losses for {len(losses)} different models")
     plt.xlabel('Training steps')
     plt.ylabel('Log(10) loss')
+    
+    if name is not None:
+        plt.savefig(name, format='png')
     plt.show()
         
     
