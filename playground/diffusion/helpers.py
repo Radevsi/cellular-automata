@@ -15,7 +15,7 @@ from IPython.display import Image
 
 
 # Helpful utils 
-TARGET_SIZE = 40
+TARGET_SIZE = 50
 
 "Image processing functions "
 
@@ -94,14 +94,41 @@ def plot_loss(loss_log):
   plt.title('Loss history (log10)')
   plt.plot(np.log10(loss_log), '.', alpha=0.1)
   plt.show()
+   
+
+
+def save_np_array(loss_log, filename, foldername="losses"):
+    """Save loss_log array as filename in foldername folder
     
+    :param loss_log: np.array, loss_log array
+    :param filename: str, name under which to save loss_log array
+    """
+    if not os.path.exists(foldername):
+        os.mkdir(foldername)
+    with open(f"./{foldername}/{filename}.npy", 'wb') as file:
+        np.save(file, loss_log)
+    print(f"Saved array under {foldername}/{filename} name to disk")
+    
+def load_np_array(filename, foldername="losses"):
+    """Load `filename` from `foldername` folder in working directory
+    
+    :param filename: str, name of saved object
+    :param foldername: str, name of folder from which to load `filename`
+    :return: np.array loss_log array loaded from disk
+    """
+    with open(f"./{foldername}/{filename}.npy", 'rb') as file:
+        return np.load(file, allow_pickle=True)
+
+
+
+
 # Helpers from/for diffusion
 
-def plot_images(images):
+def plot_images(images, cmap='viridis'):
     plt.figure(figsize=(32, 32))
     plt.imshow(torch.cat([
         torch.cat([i for i in images.cpu()], dim=-1)
-    ], dim=-2).permute(1, 2, 0).cpu())
+    ], dim=-2).permute(1, 2, 0).cpu(), cmap=cmap)
     plt.show()
     
 def save_images(images, path, **kwargs):
@@ -115,3 +142,22 @@ def setup_logging(run_name):
     os.makedirs("results", exist_ok=True)
     os.makedirs(os.path.join("models", run_name), exist_ok=True)
     os.makedirs(os.path.join("results", run_name), exist_ok=True)
+    
+# From texture blog
+def imread(url, max_size=None, mode=None):
+  if url.startswith(('http:', 'https:')):
+    # wikimedia requires a user agent
+    headers = {
+      "User-Agent": "Requests in Colab/0.0 (https://colab.research.google.com/; no-reply@google.com) requests/0.0"
+    }
+    r = requests.get(url, headers=headers)
+    f = io.BytesIO(r.content)
+  else:
+    f = url
+  img = PIL.Image.open(f)
+  if max_size is not None:
+    img.thumbnail((max_size, max_size), PIL.Image.Resampling.LANCZOS)
+  if mode is not None:
+    img = img.convert(mode)
+  img = np.float32(img)/255.0
+  return img
